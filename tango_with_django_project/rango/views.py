@@ -8,6 +8,8 @@ from rango.models import Page
 from rango.forms import CategoryForm
 from rango.forms import PageForm
 from rango.forms import UserForm, UserProfileForm
+from datetime import datetime
+from rango.bing_search import run_query
 
 def index(request):
 	# Request the context of the request
@@ -33,13 +35,34 @@ def index(request):
 	# Return a rendered response to send to the client.
 	# We make use of the shortcut funtion to make our lives easer.
 	# Note that the first parameter is the template we wish to use.
-	return render_to_response('rango/index.html', context_dict, context)
+
 
 	# return HttpResponse("Rango says hello world!<a href='/rango/about'>About</a>")
 
+	if request.session.get('last_visit'):
+		last_visit_time = request.session.get('last_visit')
+
+		visits = request.session.get('visits', 0)
+
+		if (datetime.now() - datetime.strptime(last_visit_time[:-7], "%Y-%m-%d %H:%M:%S")).days > 0:
+			request.session['visits'] = visits + 1
+
+	else:
+		request.session['last_visit'] = str(datetime.now())
+		request.session['visits'] = 1
+
+	return render_to_response('rango/index.html', context_dict, context)
+
 def about(request):
 	context = RequestContext(request)
-	return render_to_response('rango/about.html', context)
+
+	if request.session['visits']:
+		count = request.session['visits']
+
+	else:
+		count = 0
+
+	return render_to_response('rango/about.html', {'visit_count': count}, context)
 	# return HttpResponse("Rango Says: Here is the about page.<a href='/rango/'>Index</a>")
 
 def category(request, category_name_url):
@@ -166,6 +189,7 @@ def register(request):
 
 def user_login(request):
 	context = RequestContext(request)
+	context_dict = {}
 
 	if request.method == 'POST':
 
@@ -182,20 +206,36 @@ def user_login(request):
 				login(request, user)
 				return HttpResponseRedirect('/rango/')
 			else:
-				return HttpResponse("Your Rango account is disabled.")
+				context_dict['disabled_account'] = True
+				return render_to_response('rango/login.html', context_dict, context)
 		else:
 			print "Invalid login details: {0}, {1}".format(username, password)
-			return HttpResponse("Invalid login details supplied.")
+			context_dict['bad_details'] = True
+			return render_to_response('rango/login.html', context_dict, context)
 
 	else:
 		return render_to_response('rango/login.html', {}, context)
 
 @login_required
 def restricted(request):
-	return HttpResponse("Since you're logged in, you can see this text!")
+	context = RequestContext(request)
+	return render_to_response('rango/restricted.html', context)
 
 @login_required
 def user_logout(request):
 	logout(request)
 
 	return HttpResponseRedirect('/rango/')
+
+def search(request):
+	context = RequestContext(request)
+	result_list = []
+
+	if request.method == 'POST':
+		query = request.POST['query'].strip()
+
+		if query:
+			# Run our Bing function to get the results list!
+			result_list = run_query(query)
+
+	return render_to_response('rango/search.html', {'result_list': result_list}, context)
